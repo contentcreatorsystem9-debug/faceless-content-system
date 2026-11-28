@@ -65,7 +65,21 @@ const MODEL_ENV: Record<ModelTier, { env: string; fallback: string }> = {
   fast: { env: "CLAUDE_MODEL_FAST", fallback: "claude-haiku-5-5" },
 };
 
+const GROQ_MODEL_ENV: Record<ModelTier, { env: string; fallback: string }> = {
+  main: { env: "GROQ_MODEL_MAIN", fallback: "openai/gpt-oss-120b" },
+  planner: { env: "GROQ_MODEL_PLANNER", fallback: "openai/gpt-oss-120b" },
+  fast: { env: "GROQ_MODEL_FAST", fallback: "openai/gpt-oss-20b" },
+};
+
+export function isGroqProvider(): boolean {
+  const selected = readEnv("LLM_PROVIDER")?.toLowerCase();
+  if (selected === "groq") return true;
+  if (selected === "anthropic") return false;
+  return Boolean(readEnv("GROQ_API_KEY") && !readEnv("ANTHROPIC_API_KEY"));
+}
+
 export function claudeModel(tier: ModelTier): string {
+  if (isGroqProvider()) return readEnv(GROQ_MODEL_ENV[tier].env) ?? GROQ_MODEL_ENV[tier].fallback;
   return readEnv(MODEL_ENV[tier].env) ?? MODEL_ENV[tier].fallback;
 }
 
@@ -448,7 +462,108 @@ function shouldFallBackToFast(def: TaskDef, error: unknown): boolean {
 // Real client and usage logger
 // ---------------------------------------------------------------------------
 
+class GroqHttpError extends Error {
+  constructor(readonly status: number, readonly headers: Headers, message: string) {
+    super(message);
+    this.name = "GroqHttpError";
+  }
+}
+
+type GroqRequest = {
+  model: string;
+  max_tokens: number;
+  messages: { role: "system" | "user"; content: string | GroqPart[] }[];
+  response_format?: { type: "json_object" | "json_schema"; json_schema?: { name: string; schema: unknown } };
+};
+
+type GroqPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+
+function groqContent(content: unknown): string | GroqPart[] {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  const output: GroqPart[] = [];
+  for (const part of content) {
+    if (!part || typeof part !== "object") return [];
+    const item = part as { type?: unknown; text?: unknown; source?: { media_type?: unknown; data?: unknown } };
+    if (item.type === "text" && typeof item.text === "string") {
+      output.push({ type: "text", text: item.text });
+      continue;
+    }
+    if (item.type === "image" && typeof item.source?.data === "string" && typeof item.source.media_type === "string") {
+      output.push({ type: "image_url", image_url: { url: `data:${item.source.media_type};base64,${item.source.data}` } });
+    }
+  }
+  return output;
+}
+
+function createGroqClient(): ClaudeClient {
+  const apiKey = readEnv("GROQ_API_KEY");
+  if (!apiKey) throw new ClaudeError("not_set_up", "Groq is not set up. Add GROQ_API_KEY.");
+  const call = async (request: ClaudeRequest, timeout: number): Promise<ClaudeMessage> => {
+    const raw = request as unknown as {
+      model: string;
+      max_tokens: number;
+      system?: string | { text?: string }[];
+      messages: { role: "user"; content: unknown }[];
+      output_config?: { format?: { schema?: unknown } };
+    };
+    const system = typeof raw.system === "string" ? raw.system : (raw.system ?? []).map((part) => part.text ?? "").join("\n\n");
+    const schema = raw.output_config?.format?.schema;
+    const hasImage = raw.messages.some((message) => Array.isArray(message.content) && message.content.some((part) => {
+      if (!part || typeof part !== "object") return false;
+      return (part as { type?: unknown }).type === "image";
+    }));
+    const model = hasImage ? (readEnv("GROQ_MODEL_VISION") ?? "qwen/qwen3.8-27b") : raw.model;
+    const body: GroqRequest = {
+      model,
+      max_tokens: raw.max_tokens,
+      messages: [
+        ...(system ? [{ role: "system" as const, content: system }] : []),
+        ...raw.messages.map((message) => ({ role: message.role, content: groqContent(message.content) })),
+      ],
+      ...(schema
+        ? { response_format: { type: "json_schema" as const, json_schema: { name: "answer", schema } } }
+        : { response_format: { type: "json_object" as const } }),
+    };
+    let response: Response;
+    try {
+      response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(timeout),
+      });
+    } catch {
+      throw new GroqHttpError(408, new Headers(), "Groq request timed out or could not be reached.");
+    }
+    if (!response.ok) {
+      console.error(`[groq] LLM returned HTTP ${response.status}`);
+      throw new GroqHttpError(response.status, response.headers, `Groq request failed (${response.status}).`);
+    }
+    const payload = (await response.json()) as {
+      model?: string;
+      choices?: { message?: { content?: string | null }; finish_reason?: string | null }[];
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+    };
+    const choice = payload.choices?.[0];
+    if (!choice?.message || typeof choice.message.content !== "string") {
+      throw new ClaudeError("bad_output", "Groq returned an empty answer. Try again.");
+    }
+    return {
+      model: payload.model ?? model,
+      stop_reason: choice.finish_reason === "length" ? "max_tokens" : "end_turn",
+      content: [{ type: "text", text: choice.message.content }],
+      usage: { input_tokens: payload.usage?.prompt_tokens ?? 0, output_tokens: payload.usage?.completion_tokens ?? 0 },
+    } as ClaudeMessage;
+  };
+  return {
+    create: (params, opts) => call(params, opts.timeout),
+    stream: (params, opts) => ({ finalMessage: () => call(params, opts.timeout) }),
+  };
+}
+
 function createAnthropicClient(): ClaudeClient {
+  if (isGroqProvider()) return createGroqClient();
   const apiKey = readEnv("ANTHROPIC_API_KEY");
   if (!apiKey) {
     throw new ClaudeError("not_set_up", "Claude is not set up. Add ANTHROPIC_API_KEY, or keep MOCK_CLAUDE=true.");
@@ -459,6 +574,53 @@ function createAnthropicClient(): ClaudeClient {
     create: (params, opts) => sdk.messages.create(params, { timeout: opts.timeout }),
     stream: (params, opts) => sdk.messages.stream(params, { timeout: opts.timeout }),
   };
+}
+
+/** Groq's current vision model accepts at most three images per request. Keep
+ * the existing six-frame/visual-plan contracts by evaluating chunks and
+ * merging their conservative QA answers. */
+async function runGroqVisionChunks<T extends ClaudeTaskName>(
+  task: T,
+  ctx: ClaudeContext<T>,
+  overrides: Partial<ClaudeDeps>,
+  def: TaskDef,
+): Promise<TaskOutput<T>> {
+  const images = ctx.images ?? [];
+  const answers: unknown[] = [];
+  for (let start = 0; start < images.length; start += 3) {
+    const chunk = images.slice(start, start + 3);
+    const parsedInput = def.input.parse(ctx.input) as Record<string, unknown>;
+    const chunkInput =
+      task === "clip_face_check"
+        ? { ...parsedInput, frame_count: chunk.length }
+        : task === "visual_qa" && Array.isArray(parsedInput.frames)
+          ? { ...parsedInput, frames: parsedInput.frames.slice(start, start + chunk.length) }
+          : parsedInput;
+    answers.push(
+      await runClaudeTask(task, { ...ctx, input: chunkInput as TaskInput<T>, images: chunk }, overrides),
+    );
+  }
+  if (task === "clip_face_check") {
+    return clipFaceOutput.parse({ frames: answers.flatMap((answer) => clipFaceOutput.parse(answer).frames) }) as TaskOutput<T>;
+  }
+  const visual = answers.map((answer) => visualQaOutput.parse(answer));
+  const first = visual[0];
+  return visualQaOutput.parse({
+    ...first,
+    face_natural: visual.every((answer) => answer.face_natural),
+    mouth_area_clean: visual.every((answer) => answer.mouth_area_clean),
+    hands_ok: visual.every((answer) => answer.hands_ok),
+    background_stable: visual.every((answer) => answer.background_stable),
+    captions_readable: visual.every((answer) => answer.captions_readable),
+    captions_clear_of_face: visual.every((answer) => answer.captions_clear_of_face),
+    broll_matches_line: visual.every((answer) => answer.broll_matches_line),
+    no_stray_text: visual.every((answer) => answer.no_stray_text),
+    first_frame_strong: first.first_frame_strong,
+    realism_score: Math.min(...visual.map((answer) => answer.realism_score)),
+    face_box: visual.find((answer) => answer.face_box)?.face_box ?? null,
+    mouth_box: visual.find((answer) => answer.mouth_box)?.mouth_box ?? null,
+    issues: visual.flatMap((answer) => answer.issues),
+  }) as TaskOutput<T>;
 }
 
 /** Saves one ai_usage row. A failed log never breaks the task; it is reported in the server log. */
@@ -523,6 +685,10 @@ export async function runClaudeTask<T extends ClaudeTaskName>(
   const deps = { ...defaultDeps(), ...overrides };
   const def: TaskDef = CLAUDE_TASKS[task];
   const input = def.input.parse(ctx.input);
+
+  if (isGroqProvider() && (task === "clip_face_check" || task === "visual_qa") && (ctx.images?.length ?? 0) > 3) {
+    return runGroqVisionChunks(task, { ...ctx, input: input as TaskInput<T> }, overrides, def);
+  }
 
   if (deps.mock) {
     const answer = def.output.parse(mockAnswer(task, ctx.brand, input, deps.mockScenario ?? "good"));

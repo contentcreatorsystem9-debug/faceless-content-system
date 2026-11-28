@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { PlannedPostRow, PlanSettings } from "@/lib/planner";
 import { localDateString } from "@/lib/posting-times";
 import type { HumanReviewRow } from "@/lib/qa/human-review";
+import type { ScriptReviewRow } from "@/lib/qa/script-review";
 import type { StoredScript } from "@/lib/qa/script-pipeline";
 import type { NewScriptRow } from "@/lib/scripts";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -69,6 +70,8 @@ export type PostWithScript = PostRow & {
   videos?: { kind: string; status: string }[];
   /** p5-b4: the post's Gate 6 decisions (server-only human_reviews; admin pages only). */
   human_reviews?: HumanReviewRow[];
+  /** Admin-only decisions made while reviewing the script before video generation. */
+  script_reviews?: ScriptReviewRow[];
 };
 
 /** Posts from a week ago onward, oldest first, with their scripts. */
@@ -77,7 +80,7 @@ export async function listPosts(brandId: string): Promise<PostWithScript[]> {
   const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
   const { data, error } = await createAdminClient()
     .from("posts")
-    .select("id, brand_id, scheduled_for, pillar, title, hook, format, status, status_reason, scripts(id, version, qa_status, est_seconds, display_text, spoken_text, hashtags), videos(kind, status), human_reviews(decision, reason, note, admin, created_at)")
+    .select("id, brand_id, scheduled_for, pillar, title, hook, format, status, status_reason, scripts(id, version, qa_status, est_seconds, display_text, spoken_text, hashtags), videos(kind, status), human_reviews(decision, reason, note, admin, created_at), script_reviews(id, post_id, script_id, decision, note, admin, created_at)")
     .eq("brand_id", brandId)
     .gte("scheduled_for", since)
     .order("scheduled_for", { ascending: true })

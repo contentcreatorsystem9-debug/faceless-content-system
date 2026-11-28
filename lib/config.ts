@@ -41,6 +41,11 @@ export function isMockPexels(): boolean {
   return process.env.MOCK_PEXELS?.trim() !== "false";
 }
 
+/** Outbound consent/reshoot email delivery is mocked unless explicitly enabled. */
+export function isMockEmail(): boolean {
+  return process.env.MOCK_EMAIL?.trim() !== "false";
+}
+
 /** Claude follows the same rule: sample answers, no API calls, unless exactly "false". */
 export function isMockClaude(): boolean {
   return process.env.MOCK_CLAUDE?.trim() !== "false";
@@ -87,6 +92,9 @@ export const ENV_CHECKLIST: { name: string; phase: number; secret: boolean; note
   { name: "ADMIN_EMAILS", phase: 1, secret: false, note: "Who can open /admin" },
   { name: "TRIGGER_SECRET_KEY", phase: 1, secret: true, note: "Starts background jobs" },
   { name: "ANTHROPIC_API_KEY", phase: 2, secret: true, note: "Claude API" },
+  { name: "GROQ_API_KEY", phase: 2, secret: true, note: "Groq LLM and optional STT" },
+  { name: "LLM_PROVIDER", phase: 2, secret: false, note: "anthropic or groq" },
+  { name: "GROQ_MODEL_VISION", phase: 2, secret: false, note: "Groq vision model for clip/video QA" },
   { name: "HEYGEN_API_KEY", phase: 3, secret: true, note: "HeyGen API" },
   { name: "HEYGEN_WEBHOOK_SECRET", phase: 3, secret: true, note: "Checks HeyGen webhooks" },
   { name: "STT_API_KEY", phase: 4, secret: true, note: "Speech-to-text" },
@@ -97,5 +105,12 @@ export const ENV_CHECKLIST: { name: string; phase: number; secret: boolean; note
 
 /** Which env vars are set. Returns names and true/false only, never values. */
 export function envStatus() {
-  return ENV_CHECKLIST.map((item) => ({ ...item, isSet: readEnv(item.name) !== undefined }));
+  return ENV_CHECKLIST.map((item) => ({
+    ...item,
+    // Groq is intentionally one key for both text and Whisper STT. Keep the
+    // settings panel truthful when the optional provider-specific key is blank.
+    isSet: item.name === "STT_API_KEY" && readEnv("STT_PROVIDER")?.toLowerCase() === "groq"
+      ? readEnv("STT_API_KEY") !== undefined || readEnv("GROQ_API_KEY") !== undefined
+      : readEnv(item.name) !== undefined,
+  }));
 }

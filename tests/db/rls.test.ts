@@ -272,10 +272,10 @@ describe("isolation for consents, twins, names, videos, usage and payments", () 
   });
 });
 
-// Phase 3: emails are never sent yet. The consent link and reshoot tips are
-// written to email_outbox (server only), so nothing reaches a real inbox.
-describe("email_outbox (mocked emails, Phase 3)", () => {
-  it("server code can store a mocked email; status is always 'mocked'", async () => {
+// Email delivery is server-only. Mocked rows remain supported for tests/local
+// mode, while the real delivery migration also permits the sent lifecycle.
+describe("email_outbox (server-only email lifecycle)", () => {
+  it("stores mocked emails and permits a sent delivery status", async () => {
     await asRole("service_role", null, async () => {
       const saved = await db.query<{ status: string; kind: string }>(
         `insert into public.email_outbox (brand_id, to_email, kind, subject, body)
@@ -285,7 +285,7 @@ describe("email_outbox (mocked emails, Phase 3)", () => {
       await expect(
         db.exec(`insert into public.email_outbox (to_email, kind, subject, body, status)
                  values ('a@example.com', 'consent_link', 's', 'b', 'sent')`),
-      ).rejects.toThrow(/check constraint/);
+      ).resolves.toBeTruthy();
       await expect(
         db.exec(`insert into public.email_outbox (to_email, kind, subject, body)
                  values ('a@example.com', 'newsletter', 's', 'b')`),
@@ -577,7 +577,7 @@ describe("renders: videos.kind, the render claim and the 10-at-once cap", () => 
 // claims, transcript, plan bookkeeping) stays server only. Likeness-test rows
 // are admin-only, so customers don't see those rows at all.
 describe("SF2: customers read only the safe columns of their own post videos", () => {
-  const CUSTOMER_COLUMNS = ["id", "brand_id", "script_id", "status", "duration_s", "ai_label", "created_at"];
+  const CUSTOMER_COLUMNS = ["id", "brand_id", "post_id", "script_id", "status", "duration_s", "ai_label", "created_at"];
   const INTERNAL_COLUMNS = [
     "avatar_id",
     "engine",
@@ -597,7 +597,7 @@ describe("SF2: customers read only the safe columns of their own post videos", (
     "late_heygen_video_id",
     "edit_run_id",
     "edit_started_at",
-    "post_id", // p4-b3 (Q8): server only like every new column
+    // p4-b3 (Q8): the customer dashboard needs this safe relationship column.
     "edit_manifest", // p5-a2: what the editor built (Gate 4 checks it)
     "rerender_of", // p5-a2: a QA re-render points at the video it replaced
     "qa_fix_note", // p5-a2: the automatic fix that made this video
@@ -1105,7 +1105,7 @@ describe("webhook_events (HeyGen webhooks)", () => {
 describe("table privileges for anon and authenticated", () => {
   // Allow-list: internal tables. Customers cannot even read these; only server
   // code (service_role) uses them. Any other public table must be customer-readable.
-  const INTERNAL_TABLES = ["ai_usage", "app_settings", "brand_qa_settings", "email_outbox", "human_reviews", "provider_usage", "qa_reports", "webhook_events"];
+  const INTERNAL_TABLES = ["ai_usage", "app_settings", "brand_qa_settings", "customer_reviews", "email_outbox", "human_reviews", "provider_usage", "qa_reports", "script_reviews", "webhook_events"];
   const PRIVILEGES = ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE"] as const;
 
   async function publicTables(): Promise<string[]> {
@@ -1219,7 +1219,7 @@ describe("table privileges for anon and authenticated", () => {
       seen[name] = { anon: await can("anon"), authenticated: await can("authenticated"), service_role: await can("service_role") };
     }
     const expected = Object.fromEntries(
-      Object.keys(seen).map((name) => [name, { anon: false, authenticated: name === "owns_brand", service_role: true }]),
+      Object.keys(seen).map((name) => [name, { anon: false, authenticated: name === "owns_brand" || name === "customer_review_video" || name === "customer_reviewed_video_ids", service_role: true }]),
     );
     expect(seen).toEqual(expected);
   });

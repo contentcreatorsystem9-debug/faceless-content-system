@@ -1,4 +1,4 @@
-// Claude prices, used only to estimate cost in ai_usage.
+// Provider prices, used only to estimate cost in ai_usage.
 //
 // !!! ESTIMATES. Re-check every number at https://www.anthropic.com/pricing
 // !!! before trusting the "Usage & spend" page. Last checked: never (Phase 2 build).
@@ -12,6 +12,9 @@ export const MODEL_PRICES_USD_PER_MTOK: Record<string, ModelPrice> = {
   "claude-opus-5-5": { input: 5, output: 25 },
   "claude-sonnet-5-5": { input: 3, output: 15 },
   "claude-haiku-5-5": { input: 1, output: 5 },
+  "openai/gpt-oss-120b": { input: 0.15, output: 0.6 },
+  "openai/gpt-oss-20b": { input: 0.075, output: 0.3 },
+  "qwen/qwen3.8-27b": { input: 0.8, output: 4 },
 };
 
 export const CACHE_WRITE_MULTIPLIER = 1.25;

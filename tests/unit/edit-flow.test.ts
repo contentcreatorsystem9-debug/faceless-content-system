@@ -20,7 +20,7 @@ import {
   type FfmpegRunner,
 } from "@/lib/edit-flow";
 import { BROLL_NOT_SET_UP } from "@/lib/broll";
-import { notYetApplied } from "@/lib/edit";
+import { escapeFilterValue, notYetApplied } from "@/lib/edit";
 import { LOUDNORM_SILENT, MUSIC_NOT_SET_UP, fixtureMusicLibrary } from "@/lib/music";
 import { EDIT, MUSIC } from "@/lib/qa/config";
 import { editManifestSchema } from "@/lib/qa/edit-manifest";
@@ -143,7 +143,7 @@ describe("captionFontsDir (the ffmpeg fontsdir)", () => {
     const files = entries.filter((e) => e.isFile()).map((e) => e.name);
     expect(files.filter((name) => !name.endsWith(".ttf"))).toEqual([]);
     const licences = await readdir(path.join(captionFontsDir(), "licenses"), { recursive: true });
-    expect(licences.map(String).sort()).toEqual(["README.md", "anton", "anton/OFL.txt", "poppins", "poppins/OFL.txt"]);
+    expect(licences.map(String).map((name) => name.replaceAll("\\", "/")).sort()).toEqual(["README.md", "anton", "anton/OFL.txt", "poppins", "poppins/OFL.txt"]);
   });
 });
 
@@ -176,7 +176,7 @@ describe("runEditJob", () => {
       { status: "final_qa", reason: null },
     ]);
     expect(seenArgs).toContain("-filter_complex");
-    expect(seenArgs.join(" ")).toContain(`fontsdir=${captionFontsDir()}`);
+    expect(seenArgs.join(" ")).toContain(`fontsdir=${escapeFilterValue(captionFontsDir().replaceAll("\\", "/"))}`);
     expect(await readdir(tmpRoot)).toEqual([]); // temp files cleaned up
   });
 

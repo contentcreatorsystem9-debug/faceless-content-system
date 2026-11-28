@@ -1,19 +1,19 @@
 import { readFileSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { normalizeToken } from "@/lib/captions";
-import { isMockPexels } from "@/lib/config";
+import { isMockPexels, readEnv } from "@/lib/config";
 import { PlainError } from "@/lib/plain-error";
 import { BROLL } from "@/lib/qa/config";
+import { safeDownload, systemResolver } from "@/lib/safe-download";
 
 // B-roll (Phase 4 part B, docs/EDITOR-NOTES.md "B-roll").
 //
 // 1. The provider: `BrollProvider.search(keyword, { orientation, minDuration_s })`
-//    returns vertical clips as LOCAL files. Only the mock exists (MOCK_PEXELS,
-//    on unless exactly "false"): clips from tests/fixtures/broll/ (made by
-//    scripts/make-fixtures.sh). With MOCK_PEXELS=false the search throws a
-//    plain "not set up yet": there is deliberately NO Pexels client in this
-//    phase (a key and Zee's OK first). A real provider will download each
-//    chosen clip into the edit's temp folder and return the same shape.
+//    returns vertical clips as LOCAL files. Mock mode uses fixtures; real mode
+//    searches Pexels and downloads safe, short-lived local copies.
 // 2. The planner `planBroll` (pure): where the cut-ins go. Rules (numbers in
 //    BROLL, lib/qa/config.ts): at each edit_plan moment (its at_words found in
 //    the aligned caption words), 1.5 to 3 s each, 2 to 4 when they fit, never
@@ -32,7 +32,9 @@ export type BrollClip = {
   width: number;
   height: number;
   duration_s: number;
-  source: "mock";
+  source: "mock" | "pexels";
+  /** Real provider cleanup; edit-flow calls it after ffmpeg is done. */
+  cleanup?: () => Promise<void>;
 };
 
 export type BrollSearchOptions = { orientation: "portrait"; minDuration_s: number };
@@ -94,14 +96,84 @@ export function mockBrollProvider(dir: string = MOCK_BROLL_DIR): BrollProvider {
   };
 }
 
-/** The mock unless MOCK_PEXELS is exactly "false"; then a plain error (no real client exists yet). */
-export function getBrollProvider(): BrollProvider {
-  if (isMockPexels()) return mockBrollProvider();
+type PexelsVideo = {
+  id: number;
+  duration: number;
+  width: number;
+  height: number;
+  video_files?: { link?: string; file_type?: string; width?: number; height?: number; quality?: string }[];
+};
+
+/** Searches Pexels and downloads selected portrait MP4s into a temporary folder. */
+export function pexelsBrollProvider(): BrollProvider {
   return {
-    async search() {
-      throw new PlainError(BROLL_NOT_SET_UP);
+    async search(keyword, options) {
+      const apiKey = readEnv("PEXELS_API_KEY");
+      if (!apiKey) throw new PlainError(BROLL_NOT_SET_UP);
+      const url = new URL("https://api.pexels.com/videos/search");
+      url.searchParams.set("query", keyword);
+      url.searchParams.set("orientation", options.orientation);
+      url.searchParams.set("per_page", "12");
+
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          headers: { Authorization: apiKey },
+          signal: AbortSignal.timeout(30_000),
+        });
+      } catch (error) {
+        throw new PlainError("Pexels could not be reached. Try the edit again.", { cause: error });
+      }
+      if (!response.ok) {
+        console.error(`[broll] Pexels returned HTTP ${response.status}`);
+        throw new PlainError(`Pexels search failed (${response.status}). Check the API key or rate limit.`);
+      }
+      const payload = (await response.json()) as { videos?: PexelsVideo[] };
+      const candidates = (payload.videos ?? [])
+        .filter((video) => video.height > video.width && video.duration >= options.minDuration_s)
+        .map((video) => {
+          const files = (video.video_files ?? [])
+            .filter((file) => file.file_type === "video/mp4" && file.link && (file.height ?? 0) > (file.width ?? 0))
+            .sort((a, b) => (Math.abs((a.width ?? 0) - 1080) - Math.abs((b.width ?? 0) - 1080)));
+          return { video, file: files[0] };
+        })
+        .filter((item): item is { video: PexelsVideo; file: { link: string; width?: number; height?: number } } => Boolean(item.file?.link))
+        .slice(0, 5);
+
+      const clips: BrollClip[] = [];
+      for (const { video, file } of candidates) {
+        const downloaded = await safeDownload(file.link, {
+          resolve: systemResolver,
+          allowedHosts: [".pexels.com"],
+          maxBytes: 80 * 1024 * 1024,
+          maxRedirects: 3,
+          timeoutMs: 120_000,
+        });
+        const filePath = path.join(os.tmpdir(), `pexels-${video.id}-${randomUUID()}.mp4`);
+        await writeFile(filePath, downloaded.bytes);
+        clips.push({
+          id: `pexels:${video.id}`,
+          keyword,
+          file: filePath,
+          width: file.width ?? video.width,
+          height: file.height ?? video.height,
+          duration_s: video.duration,
+          source: "pexels",
+          cleanup: async () => {
+            const { unlink } = await import("node:fs/promises");
+            await unlink(filePath).catch(() => null);
+          },
+        });
+      }
+      return clips;
     },
   };
+}
+
+/** The mock unless MOCK_PEXELS is exactly "false"; real mode uses Pexels. */
+export function getBrollProvider(): BrollProvider {
+  if (isMockPexels()) return mockBrollProvider();
+  return pexelsBrollProvider();
 }
 
 // ---------------------------------------------------------------------------

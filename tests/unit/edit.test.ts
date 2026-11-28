@@ -48,7 +48,7 @@ describe("videoFilterGraph", () => {
   it("escapes awkward folder names", () => {
     expect(videoFilterGraph("/tmp/a:b's [x],y/captions.ass", "/f;o\\nts")).toBe(
       "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30," +
-        "subtitles=filename=/tmp/a\\\\:b\\\\\\'s \\[x\\]\\,y/captions.ass:fontsdir=/f\\;o\\\\\\\\nts[vout]",
+        "subtitles=filename=/tmp/a\\\\:b\\\\\\'s \\[x\\]\\,y/captions.ass:fontsdir=/f\\;o/nts[vout]",
     );
   });
 });

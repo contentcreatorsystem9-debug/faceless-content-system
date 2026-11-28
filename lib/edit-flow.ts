@@ -287,6 +287,7 @@ export async function runEditJob(input: EditJob, deps: EditDeps): Promise<EditOu
   const workDir = await mkdtemp(path.join(deps.tmpRoot ?? os.tmpdir(), "edit-"));
   let stage: Stage = "download";
   let uploadStarted = false;
+  const brollCleanups: (() => Promise<void>)[] = [];
   /** This run lost the claim: it changes nothing it does not own; its own upload (if any) goes. */
   const superseded = async (): Promise<EditOutcome> => {
     console.warn(`[edit] superseded video=${video.id} stage=${stage}`);
@@ -374,6 +375,7 @@ export async function runEditJob(input: EditJob, deps: EditDeps): Promise<EditOu
       const clip = clips.find((c) => !usedClips.has(c.id)) ?? clips[0];
       if (!clip) continue;
       usedClips.add(clip.id);
+      if (clip.cleanup) brollCleanups.push(clip.cleanup);
       broll.push({ path: clip.file, start_s: cut.start_s, duration_s: cut.duration_s });
       brollClips.push(clip.id);
     }
@@ -471,6 +473,7 @@ export async function runEditJob(input: EditJob, deps: EditDeps): Promise<EditOu
     await deps.store.setPostStatusForVideo(video.id, "team_review", TEAM_EDIT_REASON);
     return { status: "failed", error: message };
   } finally {
+    await Promise.allSettled(brollCleanups.map((cleanup) => cleanup()));
     await rm(workDir, { recursive: true, force: true });
   }
 }

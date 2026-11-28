@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { readEnv } from "@/lib/config";
 import { CLIP_CHECKS } from "@/lib/qa/config";
@@ -10,8 +11,12 @@ import { CLIP_CHECKS } from "@/lib/qa/config";
 
 // The Trigger.dev ffmpeg build extension sets FFMPEG_PATH / FFPROBE_PATH.
 // Also used by the editor (lib/edit-flow.ts).
-export const ffmpegBin = () => readEnv("FFMPEG_PATH") ?? "ffmpeg";
-export const ffprobeBin = () => readEnv("FFPROBE_PATH") ?? "ffprobe";
+// Keep the Windows fallback dynamic: Turbopack must not interpret a local
+// machine path as a build-time asset reference when compiling on Vercel.
+const windowsFfmpeg = path.join(process.env.SystemDrive ?? "C:", "ffmpeg", "ffmpeg.exe");
+const windowsFfprobe = path.join(process.env.SystemDrive ?? "C:", "ffmpeg", "ffprobe.exe");
+export const ffmpegBin = () => readEnv("FFMPEG_PATH") ?? (process.platform === "win32" && existsSync(windowsFfmpeg) ? windowsFfmpeg : "ffmpeg");
+export const ffprobeBin = () => readEnv("FFPROBE_PATH") ?? (process.platform === "win32" && existsSync(windowsFfprobe) ? windowsFfprobe : "ffprobe");
 
 const TOOL_TIMEOUT_MS = 5 * 60_000;
 

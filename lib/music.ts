@@ -133,7 +133,7 @@ export function fixtureMusicLibrary(dir: string = MOCK_MUSIC_DIR): MusicLibrary 
       try {
         beds = bedsSchema
           .parse(JSON.parse(readFileSync(path.join(dir, "beds.json"), "utf8")))
-          .beds.map((b) => ({ ...b, file: path.join(dir, b.file) }))
+          .beds.map((b) => ({ ...b, file: path.join(dir, b.file).replaceAll("\\", "/") }))
           .filter((b) => existsSync(b.file));
       } catch {
         beds = [];

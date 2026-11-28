@@ -1,6 +1,8 @@
 import "server-only";
 import type { ClipStorage, ConsentRow, ConsentStore, AvatarRow } from "@/lib/consent-store-types";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isMockEmail } from "@/lib/config";
+import { sendResendEmail } from "@/lib/resend";
 
 // Supabase versions of ConsentStore and ClipStorage. They use the SECRET key,
 // so call them only after requireAdmin() (or inside a background task).
@@ -114,8 +116,17 @@ export function createConsentStore(): ConsentStore {
       return (data as AvatarRow | null) ?? null;
     },
     async insertOutbox(row) {
-      const { error } = await db.from("email_outbox").insert(row);
-      if (error) fail("save mocked email", error);
+      const status = isMockEmail() ? "mocked" : "queued";
+      const { data, error } = await db.from("email_outbox").insert({ ...row, status }).select("id").single();
+      if (error || !data) fail("save email", error);
+      if (isMockEmail()) return;
+      try {
+        await sendResendEmail({ to: row.to_email, subject: row.subject, body: row.body });
+        await db.from("email_outbox").update({ status: "sent" }).eq("id", data.id);
+      } catch (sendError) {
+        await db.from("email_outbox").update({ status: "failed" }).eq("id", data.id);
+        throw sendError;
+      }
     },
     async hasOutbox(consentId, kind) {
       const { count, error } = await db

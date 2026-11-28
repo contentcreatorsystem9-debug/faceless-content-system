@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { ReviewHistory } from "@/components/admin/review-history";
+import { ScriptReviewHistory } from "@/components/admin/script-review-history";
 import { calendarWeeks } from "@/lib/plan-calendar";
 import { localTimeString } from "@/lib/posting-times";
 import type { PostWithScript } from "@/lib/posts";
@@ -86,6 +87,12 @@ export function PlanList({
                       <ReviewHistory reviews={post.human_reviews} />
                     </details>
                   ) : null}
+                  {post.script_reviews && post.script_reviews.length > 0 ? (
+                    <details className="mt-2 text-xs">
+                      <summary className="cursor-pointer">Script review history</summary>
+                      <ScriptReviewHistory reviews={post.script_reviews} />
+                    </details>
+                  ) : null}
                 </td>
                 <td className="px-4 py-4">{post.pillar ?? "—"}</td>
                 <td className="px-4 py-4">
@@ -104,6 +111,7 @@ export function PlanList({
 function planStatus(post: PostWithScript): string {
   if (post.status === "planned" && post.scripts.length === 0) return "Planned";
   if (post.status === "approved") return "Script ready";
+  if (post.status === "script_review") return "Needs script review";
   if (post.status === "team_review") return "Human review";
   if (post.status === "scripting") return "Draft";
   return post.status.replaceAll("_", " ");

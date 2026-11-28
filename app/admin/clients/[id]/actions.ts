@@ -22,6 +22,8 @@ import {
 import { canRunChecks, latestScript } from "@/lib/qa/can-run-checks";
 import { rewriteAnywayInput, rewriteScriptAnyway } from "@/lib/qa/script-override";
 import { runScriptChecks, type ScriptChecksResult } from "@/lib/qa/script-pipeline";
+import type { ScriptReviewDecision } from "@/lib/qa/script-review";
+import { createScriptReviewStore } from "@/lib/qa/script-review-store";
 import { createQaStore } from "@/lib/qa/store";
 import { maxSecondsFor, writeScriptForPost } from "@/lib/scripts";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -177,6 +179,43 @@ export async function checkScript(scriptId: string, _prev: ActionState): Promise
       status: "error",
       message: plainAdminMessage(error, "Couldn't run the checks. Please try again in a minute."),
     };
+  }
+}
+
+/** Admin review of a managed client's latest, already-checked script. */
+export async function reviewScriptAction(
+  scriptId: string,
+  decision: ScriptReviewDecision,
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const admin = await requireAdmin();
+  const note = String(formData.get("note") ?? "").trim();
+  if (decision === "approve" && formData.get("confirm_review") !== "yes") {
+    return { status: "error", message: "Confirm that you reviewed the script first." };
+  }
+  if (decision === "changes_requested" && note.length < 3) {
+    return { status: "error", message: "Add a short note about what should change." };
+  }
+  try {
+    const found = await getScriptForChecks(scriptId);
+    if (!found) return { status: "error", message: "Script not found." };
+    const outcome = await createScriptReviewStore().review({
+      scriptId,
+      decision,
+      note: note || null,
+      admin: admin.email || "unknown admin",
+    });
+    revalidatePath(`/admin/clients/${found.post.brand_id}`);
+    if (outcome === "approved") return { status: "ok", message: "Script approved. Create video is now available." };
+    if (outcome === "changes_requested") return { status: "ok", message: "Changes saved. Use Rewrite when the script needs another version." };
+    if (outcome === "not_latest") return { status: "error", message: "A newer script version exists. Refresh the page and review that version." };
+    if (outcome === "not_in_review") return { status: "error", message: "This script is not waiting for review." };
+    if (outcome === "not_ready") return { status: "error", message: "Only a script that passed its checks can be approved." };
+    return { status: "error", message: "Script could not be reviewed." };
+  } catch (error) {
+    logAdminError("[admin] script review failed", { scriptId, decision }, error);
+    return { status: "error", message: plainAdminMessage(error, "Couldn't save the script review. Please try again in a minute.") };
   }
 }
 

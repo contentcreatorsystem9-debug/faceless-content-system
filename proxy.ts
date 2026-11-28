@@ -14,7 +14,10 @@ export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const localBypass = isLocalAuthBypassEnabled();
 
-  if (localBypass && (path === "/login" || path === "/dashboard")) {
+  // The local bypass skips authentication for previewing both workspaces.
+  // Do not redirect /dashboard to /admin: that made the customer dashboard
+  // impossible to preview while the emergency bypass was enabled.
+  if (localBypass && path === "/login") {
     return withSessionCookies(response, NextResponse.redirect(new URL("/admin", request.url)));
   }
 

@@ -156,10 +156,19 @@ const round = (s: number) => Math.round(s * 1000) / 1000;
 /** Any input → 1080x1920 cover (scale up until both sides fill, crop the centre), square pixels, 30 fps. */
 const COVER = `scale=${EDIT_OUTPUT.width}:${EDIT_OUTPUT.height}:force_original_aspect_ratio=increase,crop=${EDIT_OUTPUT.width}:${EDIT_OUTPUT.height},setsar=1,fps=${EDIT_OUTPUT.fps}`;
 
+/** FFmpeg filtergraphs are portable with forward-slash paths, including on Windows. */
+function filterPath(value: string): string {
+  return value.replaceAll("\\", "/");
+}
+
+function filterFontPath(fontsDir: string, file: string): string {
+  return path.posix.join(fontsDir.replaceAll("\\", "/"), file);
+}
+
 function labelFilter(fontsDir: string): string {
   const l = EDIT_OVERLAYS.label;
   return [
-    `drawtext=fontfile=${escapeFilterValue(path.join(fontsDir, l.font_file))}`,
+    `drawtext=fontfile=${escapeFilterValue(filterFontPath(fontsDir, l.font_file))}`,
     `text=${escapeFilterValue(l.text)}`,
     "expansion=none", // no %{...} expansion: the text is drawn exactly as written
     `fontsize=${l.size}`,
@@ -176,7 +185,7 @@ function labelFilter(fontsDir: string): string {
 function watermarkFilter(fontsDir: string): string {
   const c = EDIT_OVERLAYS.watermark_centre;
   const centre = [
-    `drawtext=fontfile=${escapeFilterValue(path.join(fontsDir, c.font_file))}`,
+    `drawtext=fontfile=${escapeFilterValue(filterFontPath(fontsDir, c.font_file))}`,
     `text=${escapeFilterValue(c.text)}`,
     "expansion=none",
     `fontsize=${c.size}`,
@@ -188,7 +197,7 @@ function watermarkFilter(fontsDir: string): string {
   ].join(":");
   const w = EDIT_OVERLAYS.watermark;
   const tag = [
-    `drawtext=fontfile=${escapeFilterValue(path.join(fontsDir, w.font_file))}`,
+    `drawtext=fontfile=${escapeFilterValue(filterFontPath(fontsDir, w.font_file))}`,
     `text=${escapeFilterValue(w.text)}`,
     "expansion=none",
     `fontsize=${w.size}`,
@@ -217,7 +226,7 @@ export type VideoGraphOptions = {
  */
 export function videoFilterGraph(captionsPath: string, fontsDir: string, options: VideoGraphOptions = {}): string {
   const finish = [
-    `subtitles=filename=${escapeFilterValue(captionsPath)}:fontsdir=${escapeFilterValue(fontsDir)}`,
+    `subtitles=filename=${escapeFilterValue(filterPath(captionsPath))}:fontsdir=${escapeFilterValue(filterPath(fontsDir))}`,
     ...(options.aiLabel ? [labelFilter(fontsDir)] : []),
     ...(options.watermark ? [watermarkFilter(fontsDir)] : []),
   ].join(",");
