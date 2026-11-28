@@ -186,6 +186,59 @@
   background: oklch(0.68 0.22 292 / 35%);
 }
 
+html[data-admin-theme="light"] .admin-shell {
+  --background: oklch(0.97 0.015 285);
+  --foreground: oklch(0.19 0.025 285);
+  --card: oklch(1 0 0 / 88%);
+  --card-foreground: oklch(0.19 0.025 285);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.19 0.025 285);
+  --primary: oklch(0.53 0.22 292);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.94 0.025 285);
+  --secondary-foreground: oklch(0.24 0.03 285);
+  --muted: oklch(0.94 0.02 285);
+  --muted-foreground: oklch(0.48 0.035 285);
+  --accent: oklch(0.93 0.055 292);
+  --accent-foreground: oklch(0.27 0.09 292);
+  --border: oklch(0.35 0.08 285 / 15%);
+  --input: oklch(0.35 0.08 285 / 16%);
+  --ring: oklch(0.53 0.22 292 / 55%);
+  color-scheme: light;
+  background: radial-gradient(circle at 78% -12%, oklch(0.78 0.12 292 / 30%), transparent 32rem), var(--background);
+  color: var(--foreground);
+}
+
+html[data-admin-theme="light"] .admin-shell .admin-sidebar {
+  background: linear-gradient(180deg, oklch(0.99 0.008 285), oklch(0.93 0.018 285));
+}
+
+html[data-admin-theme="light"] .admin-shell .admin-topbar {
+  background: oklch(0.97 0.015 285 / 82%);
+}
+
+html[data-admin-theme="light"] .admin-shell [data-slot="card"] {
+  border-color: oklch(0.35 0.08 285 / 14%);
+  background: linear-gradient(145deg, oklch(1 0 0 / 92%), oklch(0.96 0.018 285 / 88%));
+  box-shadow: 0 18px 45px oklch(0.35 0.08 285 / 10%), inset 0 1px 0 oklch(1 0 0 / 80%);
+}
+
+html[data-admin-theme="light"] .admin-shell .admin-search,
+html[data-admin-theme="light"] .admin-shell .bg-white\/\[0\.04\] {
+  background: oklch(1 0 0 / 72%);
+  border-color: oklch(0.35 0.08 285 / 15%);
+}
+
+html[data-admin-theme="light"] .admin-shell .border-white\/10 {
+  border-color: oklch(0.35 0.08 285 / 15%);
+}
+
+html[data-admin-theme="light"] .admin-shell .text-slate-300,
+html[data-admin-theme="light"] .admin-shell .text-slate-400,
+html[data-admin-theme="light"] .admin-shell .text-slate-500 {
+  color: var(--muted-foreground);
+}
+
 /* Auth screen inspired by the supplied blue-glow reference. */
 .login-shell {
   background:

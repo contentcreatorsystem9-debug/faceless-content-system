@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { ReviewHistory } from "@/components/admin/review-history";
 import { calendarWeeks } from "@/lib/plan-calendar";
-import { lastReject } from "@/lib/qa/human-review";
 import { localTimeString } from "@/lib/posting-times";
 import type { PostWithScript } from "@/lib/posts";
 
@@ -49,47 +48,63 @@ export function PlanList({
   actions?: (post: PostWithScript) => ReactNode;
 }) {
   return (
-    <ul className="divide-border divide-y text-sm">
-      {posts.map((post) => {
-        const date = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date(post.scheduled_for));
-        const script = [...post.scripts].sort((a, b) => b.version - a.version)[0];
-        return (
-          <li key={post.id} className="space-y-1 py-2">
-            <div className="text-muted-foreground text-xs">
-              {longDate(date)} · {localTimeString(new Date(post.scheduled_for), timezone)} · {post.format} · {post.pillar ?? "—"} ·{" "}
-              {post.status}
-            </div>
-            {post.status_reason && <div className="text-destructive text-xs">{post.status_reason}</div>}
-            {/* p5-b4: Gate 6 decisions with the internal note (admin page only; customers never see them). */}
-            {post.human_reviews && post.human_reviews.length > 0 && (
-              <div className="space-y-1 rounded-md border p-2 text-xs">
-                <div className="font-medium">
-                  QA queue decisions (team only)
-                  {post.status === "approved" && lastReject(post.human_reviews) ? ": rejected, press Make video to try again." : ""}
-                </div>
-                <ReviewHistory reviews={post.human_reviews} />
-              </div>
-            )}
-            <div className="font-medium">{post.title}</div>
-            {post.hook && <div className="text-muted-foreground">“{post.hook}”</div>}
-            {script && (
-              <details className="text-xs">
-                <summary className="cursor-pointer">
-                  Script v{script.version} · about {Math.round(Number(script.est_seconds ?? 0))} s · QA {script.qa_status}
-                </summary>
-                <p className="mt-1 break-words whitespace-pre-wrap">{script.display_text}</p>
-                {script.spoken_text && (
-                  <p className="text-muted-foreground mt-1 break-words whitespace-pre-wrap">
-                    <span className="font-medium">Spoken:</span> {script.spoken_text}
-                  </p>
-                )}
-                <p className="text-muted-foreground mt-1">{script.hashtags.join(" ")}</p>
-              </details>
-            )}
-            {actions?.(post)}
-          </li>
-        );
-      })}
-    </ul>
+    <div className="overflow-x-auto rounded-xl border border-white/10">
+      <table className="w-full min-w-[760px] text-left text-sm">
+        <thead className="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
+          <tr>
+            <th className="px-4 py-3 font-medium">Date</th>
+            <th className="px-4 py-3 font-medium">Topic</th>
+            <th className="px-4 py-3 font-medium">Pillar</th>
+            <th className="px-4 py-3 font-medium">Status</th>
+            <th className="px-4 py-3 text-right font-medium">Action</th>
+          </tr>
+        </thead>
+        <tbody className="divide-border divide-y">
+          {posts.map((post) => {
+            const date = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date(post.scheduled_for));
+            const script = [...post.scripts].sort((a, b) => b.version - a.version)[0];
+            const status = planStatus(post);
+            return (
+              <tr key={post.id} className="align-top transition hover:bg-white/[0.03]">
+                <td className="whitespace-nowrap px-4 py-4">
+                  <p className="font-medium">{longDate(date)}</p>
+                  <p className="text-muted-foreground mt-1 text-xs">{localTimeString(new Date(post.scheduled_for), timezone)}</p>
+                </td>
+                <td className="max-w-sm px-4 py-4">
+                  <p className="font-medium">{post.title}</p>
+                  {post.hook ? <p className="text-muted-foreground mt-1 line-clamp-2 text-xs">“{post.hook}”</p> : null}
+                  {script ? (
+                    <details className="mt-2 text-xs">
+                      <summary className="text-primary cursor-pointer">View script · {Math.round(Number(script.est_seconds ?? 0))} sec</summary>
+                      <p className="mt-2 break-words whitespace-pre-wrap">{script.display_text}</p>
+                    </details>
+                  ) : null}
+                  {post.status_reason ? <p className="text-destructive mt-2 text-xs">{post.status_reason}</p> : null}
+                  {post.human_reviews && post.human_reviews.length > 0 ? (
+                    <details className="mt-2 text-xs">
+                      <summary className="cursor-pointer">QA history</summary>
+                      <ReviewHistory reviews={post.human_reviews} />
+                    </details>
+                  ) : null}
+                </td>
+                <td className="px-4 py-4">{post.pillar ?? "—"}</td>
+                <td className="px-4 py-4">
+                  <span className="rounded-full border border-primary/25 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">{status}</span>
+                </td>
+                <td className="px-4 py-4 text-right">{actions?.(post) ?? <span className="text-muted-foreground text-xs">—</span>}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
+}
+
+function planStatus(post: PostWithScript): string {
+  if (post.status === "planned" && post.scripts.length === 0) return "Planned";
+  if (post.status === "approved") return "Script ready";
+  if (post.status === "team_review") return "Human review";
+  if (post.status === "scripting") return "Draft";
+  return post.status.replaceAll("_", " ");
 }

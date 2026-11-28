@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { Bell, Command, Plus, Sparkles } from "lucide-react";
 import { AdminNav } from "@/components/admin/admin-nav";
+import { ThemeToggle } from "@/components/admin/theme-toggle";
 import { isLocalAuthBypassEnabled } from "@/lib/config";
 
 export const metadata: Metadata = {
@@ -57,6 +58,7 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
                 <Bell className="size-4" />
                 <span className="absolute right-2 top-2 size-1.5 rounded-full bg-fuchsia-400" />
               </button>
+              <ThemeToggle />
               <Link href="/admin" className="text-muted-foreground hover:text-foreground rounded-xl border border-white/10 px-3 py-2 text-xs transition">Admin home</Link>
             </div>
           </div>
