@@ -7,9 +7,13 @@ export function readEnv(name: string): string | undefined {
   return value && value.trim() !== "" ? value.trim() : undefined;
 }
 
-/** Temporary local preview switches. Both are disabled outside development. */
+/**
+ * Temporary auth bypass. This is intentionally an explicit emergency switch:
+ * when enabled, every admin request is treated as the local preview admin.
+ * Set it to false/remove it as soon as Supabase login is ready.
+ */
 export function isLocalAuthBypassEnabled(): boolean {
-  return process.env.NODE_ENV !== "production" && process.env.DEV_AUTH_BYPASS?.trim() === "true";
+  return process.env.ADMIN_AUTH_BYPASS?.trim() === "true" || process.env.DEV_AUTH_BYPASS?.trim() === "true";
 }
 
 export function isLocalDemoMode(): boolean {
