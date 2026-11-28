@@ -17,6 +17,8 @@ import { getBrand, listBrandVersions } from "@/lib/brands";
 import { timezoneFor } from "@/lib/posting-times";
 import { listPosts } from "@/lib/posts";
 import { generateBrandProfile, saveProfileEdit } from "./actions";
+import { inviteClientAction } from "./invite-actions";
+import { ClientInviteForm } from "@/components/admin/client-invite-form";
 
 export default function BrandPage({ params }: PageProps<"/admin/clients/[id]">) {
   return (
@@ -58,6 +60,22 @@ async function BrandDetail({ params }: Pick<PageProps<"/admin/clients/[id]">, "p
           Consent clip and twin →
         </Link>
       </p>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Client access</CardTitle>
+          <p className="text-muted-foreground text-sm">Invite this client to sign in and view only their own calendar, scripts and videos.</p>
+        </CardHeader>
+        <CardContent>
+          <ClientInviteForm action={inviteClientAction.bind(null, brand.id)} defaultEmail={brand.contact_email} />
+        </CardContent>
+      </Card>
+
+      <div className="flex flex-wrap gap-2">
+        <Link href={`/admin/clients/${brand.id}/preview`} className="rounded-xl bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-[0_0_22px_rgba(139,92,246,0.25)] hover:bg-primary/85">
+          Preview client dashboard →
+        </Link>
+      </div>
 
       <Card>
         <CardHeader>

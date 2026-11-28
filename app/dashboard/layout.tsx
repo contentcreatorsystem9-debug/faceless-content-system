@@ -8,5 +8,5 @@ export default function DashboardLayout({ children }: Readonly<{ children: React
 
 async function DashboardShell({ children }: { children: React.ReactNode }) {
   const workspace = await getCustomerWorkspace();
-  return <ClientShell name={workspace.brand?.name ?? workspace.user.email}>{children}</ClientShell>;
+  return <ClientShell name={workspace.brand?.name ?? workspace.user.email} preview={workspace.preview}>{children}</ClientShell>;
 }

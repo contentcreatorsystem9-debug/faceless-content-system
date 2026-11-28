@@ -9,6 +9,7 @@ import { isLocalDemoMode } from "@/lib/config";
 export type BrandRow = {
   id: string;
   owner_id: string;
+  contact_email?: string | null;
   name: string;
   niche: string | null;
   audience: string | null;

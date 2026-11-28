@@ -8,7 +8,7 @@ import { reviewVideoAction } from "@/app/dashboard/actions";
 
 const idle: ActionState = { status: "idle", message: "" };
 
-export function VideoReviewActions({ videoId }: { videoId: string }) {
+export function VideoReviewActions({ videoId, readOnly = false }: { videoId: string; readOnly?: boolean }) {
   const [state, formAction, pending] = useActionState(reviewVideoAction, idle);
   return (
     <form action={formAction} className="space-y-3" aria-busy={pending}>
@@ -27,14 +27,14 @@ export function VideoReviewActions({ videoId }: { videoId: string }) {
       </div>
       <Textarea name="note" maxLength={500} placeholder="Optional note for the team" aria-label="Optional note for the team" />
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" name="decision" value="approve" disabled={pending}>Approve</Button>
-        <Button type="submit" name="decision" value="redo" variant="outline" disabled={pending}>Redo</Button>
+        <Button type="submit" name="decision" value="approve" disabled={pending || readOnly}>Approve</Button>
+        <Button type="submit" name="decision" value="redo" variant="outline" disabled={pending || readOnly}>Redo</Button>
         <Button
           type="submit"
           name="decision"
           value="skip"
           variant="ghost"
-          disabled={pending}
+          disabled={pending || readOnly}
           onClick={(event) => {
             if (!window.confirm("Skip this video? It will not be used.")) event.preventDefault();
           }}

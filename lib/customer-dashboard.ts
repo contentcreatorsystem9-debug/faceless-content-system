@@ -1,7 +1,9 @@
 import "server-only";
 import { requireUser } from "@/lib/auth";
 import { isLocalAuthBypassEnabled } from "@/lib/config";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { isPreviewBrandId, previewBrandId } from "@/lib/customer-preview";
 
 export type CustomerPost = {
   id: string;
@@ -29,37 +31,36 @@ export type CustomerWorkspace = {
   videos: CustomerVideo[];
   reviewedVideoIds: string[];
   consent: { admin_status: string; heygen_consent_status: string | null } | null;
+  preview: boolean;
 };
 
 /** Customer-scoped read model. Supabase RLS limits every query to the signed-in owner's rows. */
 export async function getCustomerWorkspace(): Promise<CustomerWorkspace> {
   const user = await requireUser("/dashboard");
-  // Emergency preview mode intentionally has no Supabase session. Return the
-  // shell without attempting RLS queries; real client data requires a real
-  // signed-in customer session with ADMIN_AUTH_BYPASS disabled.
-  if (isLocalAuthBypassEnabled()) {
-    return { user, profile: null, brand: null, posts: [], videos: [], reviewedVideoIds: [], consent: null };
-  }
-  const db = await createClient();
-  const [profileResult, brandResult] = await Promise.all([
-    db.from("profiles").select("plan, full_name").eq("id", user.id).maybeSingle(),
-    db.from("brands").select("id, name, niche, posts_per_week, autopilot_level").order("created_at", { ascending: true }).limit(1).maybeSingle(),
-  ]);
-  if (profileResult.error) throw new Error(`Could not load your profile: ${profileResult.error.message}`);
+  const requestedPreview = await previewBrandId();
+  const preview = isLocalAuthBypassEnabled() || (user.isAdmin && isPreviewBrandId(requestedPreview));
+  const db = preview ? createAdminClient() : await createClient();
+  let brandQuery = db.from("brands").select("id, owner_id, name, niche, posts_per_week, autopilot_level").order("created_at", { ascending: true }).limit(1);
+  if (preview && isPreviewBrandId(requestedPreview)) brandQuery = brandQuery.eq("id", requestedPreview);
+  if (!preview) brandQuery = brandQuery.eq("owner_id", user.id);
+  const brandResult = await brandQuery.maybeSingle();
   if (brandResult.error) throw new Error(`Could not load your workspace: ${brandResult.error.message}`);
-  const brand = brandResult.data as CustomerWorkspace["brand"];
-  if (!brand) return { user, profile: profileResult.data, brand: null, posts: [], videos: [], reviewedVideoIds: [], consent: null };
+  const brandRecord = brandResult.data as (NonNullable<CustomerWorkspace["brand"]> & { owner_id: string }) | null;
+  const profileResult = await db.from("profiles").select("plan, full_name").eq("id", brandRecord?.owner_id ?? user.id).maybeSingle();
+  if (profileResult.error) throw new Error(`Could not load your profile: ${profileResult.error.message}`);
+  if (!brandRecord) return { user, profile: profileResult.data, brand: null, posts: [], videos: [], reviewedVideoIds: [], consent: null, preview };
+  const { owner_id: _ownerId, ...brand } = brandRecord;
 
   const [postsResult, videosResult, consentResult, reviewedResult] = await Promise.all([
     db.from("posts").select("id, scheduled_for, pillar, title, status, status_reason, scripts(id, version, display_text, spoken_text, qa_status)").eq("brand_id", brand.id).order("scheduled_for", { ascending: true }).limit(120),
     // These are the customer-granted columns only. Storage paths stay server-only;
     // the signed URL route verifies ownership before reading final_path.
-    db.from("videos").select("id, post_id, status, duration_s, created_at").eq("brand_id", brand.id).order("created_at", { ascending: false }).limit(100),
+    db.from("videos").select("id, post_id, status, duration_s, created_at").eq("brand_id", brand.id).eq("kind", "post").order("created_at", { ascending: false }).limit(100),
     db.from("consents").select("admin_status, heygen_consent_status").eq("brand_id", brand.id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
     // The emergency preview bypass has no Supabase auth session, so an RPC
     // granted only to authenticated would correctly reject it. Keep the
     // preview shell usable; real customer sessions load the review IDs.
-    isLocalAuthBypassEnabled() ? Promise.resolve({ data: [], error: null }) : db.rpc("customer_reviewed_video_ids"),
+    preview ? Promise.resolve({ data: [], error: null }) : db.rpc("customer_reviewed_video_ids"),
   ]);
   if (postsResult.error) throw new Error(`Could not load your content plan: ${postsResult.error.message}`);
   if (videosResult.error) throw new Error(`Could not load your videos: ${videosResult.error.message}`);
@@ -77,6 +78,7 @@ export async function getCustomerWorkspace(): Promise<CustomerWorkspace> {
     })),
     reviewedVideoIds: ((reviewedResult.data ?? []) as Array<{ video_id: string }>).map((row) => row.video_id),
     consent: consentResult.data,
+    preview,
   };
 }
 

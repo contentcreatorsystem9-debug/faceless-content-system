@@ -11,6 +11,7 @@ import { confirmUpload, newWords, prepareUpload, runClipCheckJob, startConsent }
 import { createClipStorage, createConsentStore } from "@/lib/consent-store";
 import { PlainError, type ActionState } from "@/lib/plain-error";
 import { createClient } from "@/lib/supabase/server";
+import { isClientPreview } from "@/lib/customer-preview";
 import type { checkClipTask } from "@/trigger/check-clip";
 
 const idleFailure = "Something went wrong. Please try again in a minute.";
@@ -37,6 +38,7 @@ function friendly(error: unknown): string {
 
 export async function reviewVideoAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
   await requireUser("/dashboard/review");
+  if (await isClientPreview()) return { status: "error", message: "Preview mode is read-only." };
   const parsed = reviewSchema.safeParse({
     video_id: formText(formData, "video_id"),
     decision: formText(formData, "decision"),
@@ -85,6 +87,7 @@ export async function reviewVideoAction(_previous: ActionState, formData: FormDa
 
 async function ownedBrand() {
   const user = await requireUser("/dashboard/consent");
+  if (await isClientPreview()) throw new PlainError("Preview mode is read-only.");
   const db = await createClient();
   const { data, error } = await db.from("brands").select("id, name").eq("owner_id", user.id).order("created_at", { ascending: true }).limit(1).maybeSingle();
   if (error) throw error;
