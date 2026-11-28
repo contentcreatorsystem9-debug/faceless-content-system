@@ -16,6 +16,7 @@ import {
 import { getBrand, listBrandVersions } from "@/lib/brands";
 import { timezoneFor } from "@/lib/posting-times";
 import { listPosts } from "@/lib/posts";
+import { feedbackLabel, listClientFeedback } from "@/lib/client-feedback-store";
 import { generateBrandProfile, saveProfileEdit } from "./actions";
 import { inviteClientAction } from "./invite-actions";
 import { ClientInviteForm } from "@/components/admin/client-invite-form";
@@ -43,6 +44,7 @@ async function BrandDetail({ params }: Pick<PageProps<"/admin/clients/[id]">, "p
   const samples = splitSamples(brand.samples);
   const timezone = timezoneFor(brand.audience_countries);
   const posts = await listPosts(brand.id);
+  const clientFeedback = await listClientFeedback(brand.id);
   const scriptCount = posts.reduce((count, post) => count + post.scripts.length, 0);
   const inProduction = posts.filter((post) => post.videos?.some((video) => ["queued", "rendering", "editing", "technical_qa", "audio_qa", "visual_qa"].includes(video.status))).length;
   const approved = posts.filter((post) => ["approved", "delivered"].includes(post.status)).length;
@@ -68,6 +70,16 @@ async function BrandDetail({ params }: Pick<PageProps<"/admin/clients/[id]">, "p
         </CardHeader>
         <CardContent>
           <ClientInviteForm action={inviteClientAction.bind(null, brand.id)} defaultEmail={brand.contact_email} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Client requests</CardTitle>
+          <p className="text-muted-foreground text-sm">Approvals and change requests submitted from the client portal.</p>
+        </CardHeader>
+        <CardContent>
+          {clientFeedback.length === 0 ? <p className="text-muted-foreground text-sm">No client requests yet.</p> : <ul className="divide-y divide-border">{clientFeedback.map((item) => <li key={item.id} className="flex flex-col gap-2 py-3 text-sm sm:flex-row sm:items-start sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><span className="font-medium">{feedbackLabel(item.kind)}</span><span className={item.status === "open" ? "rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-700 dark:text-amber-300" : "rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground"}>{item.status}</span></div>{item.message ? <p className="text-muted-foreground mt-1 whitespace-pre-wrap">{item.message}</p> : null}</div><time className="text-muted-foreground shrink-0 text-xs" dateTime={item.created_at}>{new Date(item.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</time></li>)}</ul>}
         </CardContent>
       </Card>
 

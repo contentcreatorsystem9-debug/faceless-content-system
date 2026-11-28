@@ -1105,7 +1105,7 @@ describe("webhook_events (HeyGen webhooks)", () => {
 describe("table privileges for anon and authenticated", () => {
   // Allow-list: internal tables. Customers cannot even read these; only server
   // code (service_role) uses them. Any other public table must be customer-readable.
-  const INTERNAL_TABLES = ["ai_usage", "app_settings", "brand_qa_settings", "customer_reviews", "email_outbox", "human_reviews", "provider_usage", "qa_reports", "script_reviews", "webhook_events"];
+  const INTERNAL_TABLES = ["ai_usage", "app_settings", "brand_qa_settings", "client_feedback", "customer_reviews", "email_outbox", "human_reviews", "provider_usage", "qa_reports", "script_reviews", "webhook_events"];
   const PRIVILEGES = ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE"] as const;
 
   async function publicTables(): Promise<string[]> {
@@ -1219,7 +1219,7 @@ describe("table privileges for anon and authenticated", () => {
       seen[name] = { anon: await can("anon"), authenticated: await can("authenticated"), service_role: await can("service_role") };
     }
     const expected = Object.fromEntries(
-      Object.keys(seen).map((name) => [name, { anon: false, authenticated: name === "owns_brand" || name === "customer_review_video" || name === "customer_reviewed_video_ids", service_role: true }]),
+      Object.keys(seen).map((name) => [name, { anon: false, authenticated: name === "owns_brand" || name === "customer_review_video" || name === "customer_reviewed_video_ids" || name === "customer_submit_feedback", service_role: true }]),
     );
     expect(seen).toEqual(expected);
   });

@@ -8,11 +8,11 @@ import { ThemeToggle } from "@/components/admin/theme-toggle";
 
 const links = [
   ["/dashboard", "Overview", Home],
-  ["/dashboard/calendar", "Content plan", CalendarDays],
-  ["/dashboard/scripts", "Scripts", FileText],
-  ["/dashboard/videos", "Videos", Video],
-  ["/dashboard/review", "Review", Clapperboard],
-  ["/dashboard/consent", "Consent & twin", ShieldCheck],
+  ["/dashboard/calendar", "Content Plan", CalendarDays],
+  ["/dashboard/scripts", "Script Review", FileText],
+  ["/dashboard/videos", "Video Library", Video],
+  ["/dashboard/review", "Video Review", Clapperboard],
+  ["/dashboard/consent", "Brand & Consent", ShieldCheck],
   ["/dashboard/settings", "Settings", Settings],
 ] as const;
 

@@ -26,6 +26,13 @@ const consentStartSchema = z.object({
   legal_name: z.string().trim().min(3).max(120),
   agree: z.literal("on"),
 });
+const clientFeedbackSchema = z.object({
+  brand_id: z.string().uuid(),
+  post_id: z.string().uuid().optional(),
+  script_id: z.string().uuid().optional(),
+  kind: z.enum(["plan_approved", "plan_change", "script_approved", "script_change", "profile_change"]),
+  message: z.string().trim().max(1000).optional(),
+});
 
 function formText(formData: FormData, key: string): string | undefined {
   const value = formData.get(key);
@@ -78,6 +85,52 @@ export async function reviewVideoAction(_previous: ActionState, formData: FormDa
       revalidatePath("/dashboard/review");
       revalidatePath("/dashboard/library");
       revalidatePath("/dashboard/calendar");
+    }
+    return result;
+  } catch {
+    return { status: "error", message: idleFailure };
+  }
+}
+
+export async function submitClientFeedbackAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
+  await requireUser("/dashboard");
+  if (await isClientPreview()) return { status: "error", message: "Preview mode is read-only." };
+  const parsed = clientFeedbackSchema.safeParse({
+    brand_id: formText(formData, "brand_id"),
+    post_id: formText(formData, "post_id") || undefined,
+    script_id: formText(formData, "script_id") || undefined,
+    kind: formText(formData, "kind"),
+    message: formText(formData, "message") || undefined,
+  });
+  if (!parsed.success) return { status: "error", message: "Please check the request and try again." };
+  if (["plan_change", "script_change", "profile_change"].includes(parsed.data.kind) && !parsed.data.message) {
+    return { status: "error", message: "Add a short note so the team knows what to change." };
+  }
+
+  try {
+    const db = await createClient();
+    const { data, error } = await db.rpc("customer_submit_feedback", {
+      p_brand_id: parsed.data.brand_id,
+      p_post_id: parsed.data.post_id ?? null,
+      p_script_id: parsed.data.script_id ?? null,
+      p_kind: parsed.data.kind,
+      p_message: parsed.data.message ?? null,
+    });
+    if (error) throw error;
+    const outcome = (data as { outcome?: string } | null)?.outcome;
+    const messages: Record<string, ActionState> = {
+      saved: { status: "ok", message: parsed.data.kind === "script_approved" ? "Script approved. The team can now prepare your video." : "Thanks — your request has been sent to the team." },
+      message_required: { status: "error", message: "Add a short note so the team knows what to change." },
+      not_allowed: { status: "error", message: "This item is no longer available for feedback." },
+      bad_input: { status: "error", message: "Please check the request and try again." },
+      not_authenticated: { status: "error", message: "Please sign in again." },
+    };
+    const result = messages[outcome ?? ""] ?? { status: "error", message: idleFailure };
+    if (result.status === "ok") {
+      revalidatePath("/dashboard");
+      revalidatePath("/dashboard/calendar");
+      revalidatePath("/dashboard/scripts");
+      revalidatePath("/dashboard/consent");
     }
     return result;
   } catch {
