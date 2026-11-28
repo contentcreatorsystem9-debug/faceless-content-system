@@ -34,6 +34,12 @@ export type CustomerWorkspace = {
 /** Customer-scoped read model. Supabase RLS limits every query to the signed-in owner's rows. */
 export async function getCustomerWorkspace(): Promise<CustomerWorkspace> {
   const user = await requireUser("/dashboard");
+  // Emergency preview mode intentionally has no Supabase session. Return the
+  // shell without attempting RLS queries; real client data requires a real
+  // signed-in customer session with ADMIN_AUTH_BYPASS disabled.
+  if (isLocalAuthBypassEnabled()) {
+    return { user, profile: null, brand: null, posts: [], videos: [], reviewedVideoIds: [], consent: null };
+  }
   const db = await createClient();
   const [profileResult, brandResult] = await Promise.all([
     db.from("profiles").select("plan, full_name").eq("id", user.id).maybeSingle(),
