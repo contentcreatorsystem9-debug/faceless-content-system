@@ -1,5 +1,6 @@
 import "server-only";
 import { requireUser } from "@/lib/auth";
+import { isLocalAuthBypassEnabled } from "@/lib/config";
 import { createClient } from "@/lib/supabase/server";
 
 export type CustomerPost = {
@@ -49,7 +50,10 @@ export async function getCustomerWorkspace(): Promise<CustomerWorkspace> {
     // the signed URL route verifies ownership before reading final_path.
     db.from("videos").select("id, post_id, status, duration_s, created_at").eq("brand_id", brand.id).order("created_at", { ascending: false }).limit(100),
     db.from("consents").select("admin_status, heygen_consent_status").eq("brand_id", brand.id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-    db.rpc("customer_reviewed_video_ids"),
+    // The emergency preview bypass has no Supabase auth session, so an RPC
+    // granted only to authenticated would correctly reject it. Keep the
+    // preview shell usable; real customer sessions load the review IDs.
+    isLocalAuthBypassEnabled() ? Promise.resolve({ data: [], error: null }) : db.rpc("customer_reviewed_video_ids"),
   ]);
   if (postsResult.error) throw new Error(`Could not load your content plan: ${postsResult.error.message}`);
   if (videosResult.error) throw new Error(`Could not load your videos: ${videosResult.error.message}`);
